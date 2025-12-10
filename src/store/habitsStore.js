@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import * as habitsService from '../services/habits'
 import * as completionsService from '../services/completions'
 import { updateWeeklyStats } from '../services/leaderboard'
+import { calculateStreak } from '../utils/streakCalculator'
+import { getWeekRange, formatDate } from '../utils/dateUtils'
 
 // Note: We don't persist habits locally anymore - Firebase is the source of truth
 // Local persistence was causing stale/demo data issues on reload
@@ -20,54 +22,78 @@ export const useHabitsStore = create((set, get) => ({
     // Set error
     setError: (error) => set({ error }),
 
-    // Add a new habit (to Firestore)
+    // Add a new habit (Optimistic to prevent UI blocking)
     addHabit: async (userId, habitData) => {
-        set({ isLoading: true, error: null })
-        try {
-            const newHabit = await habitsService.createHabit(userId, habitData)
-            set((state) => ({
-                habits: [newHabit, ...state.habits],
-                isLoading: false,
-            }))
-            return newHabit
-        } catch (error) {
-            console.error('Error in addHabit:', error)
-            set({ error: error.message, isLoading: false })
-            throw error
+        // Generate temp ID for immediate UI update
+        const tempId = 'temp_' + Date.now()
+        const newHabit = {
+            id: tempId,
+            ...habitData,
+            userId,
+            currentStreak: 0,
+            createdAt: new Date(), // Local date object
+            updatedAt: new Date(),
+            isTemp: true
         }
+
+        // Update local state immediately
+        set((state) => ({
+            habits: [newHabit, ...state.habits],
+            isLoading: false // Ensure loading is off so UI can update
+        }))
+
+        // Sync to Firestore in background
+        habitsService.createHabit(userId, habitData)
+            .then((serverHabit) => {
+                // Replace temp habit with server habit
+                set((state) => ({
+                    habits: state.habits.map(h =>
+                        h.id === tempId ? serverHabit : h
+                    )
+                }))
+            })
+            .catch((error) => {
+                console.error('Background create failed:', error)
+                set((state) => ({
+                    error: "Failed to sync new habit. It may disappear on reload.",
+                    // Optionally remove the temp habit or keep it with an error flag
+                    habits: state.habits.map(h =>
+                        h.id === tempId ? { ...h, syncError: true } : h
+                    )
+                }))
+            })
+
+        return newHabit
     },
 
     // Update a habit (in Firestore)
     updateHabit: async (habitId, updates) => {
-        set({ isLoading: true, error: null })
+        // Optimistic update
+        set((state) => ({
+            habits: state.habits.map((h) =>
+                h.id === habitId ? { ...h, ...updates } : h
+            ),
+        }))
+
         try {
             await habitsService.updateHabit(habitId, updates)
-            set((state) => ({
-                habits: state.habits.map((h) =>
-                    h.id === habitId ? { ...h, ...updates } : h
-                ),
-                isLoading: false,
-            }))
         } catch (error) {
             console.error('Error in updateHabit:', error)
-            set({ error: error.message, isLoading: false })
-            throw error
+            set({ error: error.message })
+            // We could revert here, but for now we keep local changes
         }
     },
 
     // Delete a habit (from Firestore)
     deleteHabit: async (habitId) => {
-        set({ isLoading: true, error: null })
+        set((state) => ({
+            habits: state.habits.filter((h) => h.id !== habitId),
+        }))
+
         try {
             await habitsService.deleteHabit(habitId)
-            set((state) => ({
-                habits: state.habits.filter((h) => h.id !== habitId),
-                isLoading: false,
-            }))
         } catch (error) {
             console.error('Error in deleteHabit:', error)
-            set({ error: error.message, isLoading: false })
-            throw error
         }
     },
 
@@ -87,8 +113,13 @@ export const useHabitsStore = create((set, get) => ({
 
     // Subscribe to real-time habit updates
     subscribeToHabits: (userId) => {
+        // Only set loading if we don't have habits yet to avoid flashing
+        if (get().habits.length === 0) {
+            set({ isLoading: true })
+        }
+
         return habitsService.subscribeToHabits(userId, (habits) => {
-            set({ habits })
+            set({ habits, isLoading: false })
         })
     },
 
@@ -101,7 +132,41 @@ export const useHabitsStore = create((set, get) => ({
             },
         })),
 
-    // Load completions for a date from Firestore
+    // Load completions for a date range (Weekly)
+    loadCompletionsForWeek: async (userId) => {
+        try {
+            // Get range for current week
+            const { start, end } = getWeekRange(new Date())
+            // Ensure we include the full day for end date
+            const endDateStr = formatDate(end)
+            const startDateStr = formatDate(start)
+
+            const completions = await completionsService.getCompletionsForRange(userId, startDateStr, endDateStr)
+
+            // Group by date
+            const completionsByDate = {}
+            // Initialize empty arrays for all days in range to avoid undefined later? No need, '|| []' handles it.
+
+            completions.forEach(c => {
+                if (!completionsByDate[c.date]) completionsByDate[c.date] = []
+                completionsByDate[c.date].push(c)
+            })
+
+            // Merge with existing state
+            set((state) => ({
+                completions: {
+                    ...state.completions,
+                    ...completionsByDate
+                }
+            }))
+            return completionsByDate
+        } catch (error) {
+            console.error('Error loading completions:', error)
+            return {}
+        }
+    },
+
+    // Kept for backward compatibility if needed, but App.jsx uses week load now
     loadCompletionsForDate: async (userId, date) => {
         try {
             const completions = await completionsService.getCompletionsForDate(userId, date)
@@ -118,59 +183,104 @@ export const useHabitsStore = create((set, get) => ({
         }
     },
 
-    // Toggle habit completion (in Firestore)
+    // Toggle habit completion (Optimistic & Local-First)
     toggleCompletion: async (habitId, userId, date) => {
-        try {
-            const result = await completionsService.toggleCompletion(habitId, userId, date)
-            const { completions, habits } = get()
-            const dateCompletions = completions[date] || []
+        const { completions, habits } = get()
+        const dateCompletions = completions[date] || []
+        const habit = habits.find((h) => h.id === habitId)
 
-            let newCompletions
-            if (result) {
-                // Completion was added
-                newCompletions = [...dateCompletions, result]
+        // Block future updates
+        const todayStr = formatDate(new Date())
+        if (date > todayStr) {
+            console.warn("Cannot mark future habits as done")
+            return
+        }
+
+        // 1. Determine new state (Optimistic)
+        const existingCompletion = dateCompletions.find(c => c.habitId === habitId)
+        const isCompleting = !existingCompletion
+
+        let newCompletions
+        if (isCompleting) {
+            // Add optimistic completion
+            newCompletions = [...dateCompletions, { habitId, userId, date, value: true, isOptimistic: true }]
+        } else {
+            // Remove completion
+            newCompletions = dateCompletions.filter((c) => c.habitId !== habitId)
+        }
+
+        // 2. Update local state immediately
+        set((state) => ({
+            completions: {
+                ...state.completions,
+                [date]: newCompletions,
+            },
+        }))
+
+        // 3. Calculate streak locally (Heuristic for UI responsiveness)
+        if (habit) {
+            let newStreak = habit.currentStreak
+
+            if (isCompleting) {
+                // If we are marking as done, assume we are extending the streak or starting new
+                // Simplified heuristic: Just increment. 
+                newStreak = (habit.currentStreak || 0) + 1
             } else {
-                // Completion was removed
-                newCompletions = dateCompletions.filter((c) => c.habitId !== habitId)
+                // If undoing, decrement, but don't go below 0
+                newStreak = Math.max(0, (habit.currentStreak || 0) - 1)
             }
 
-            // Update local state
+            // Update local habit streak immediately
             set((state) => ({
-                completions: {
-                    ...state.completions,
-                    [date]: newCompletions,
-                },
+                habits: state.habits.map((h) =>
+                    h.id === habitId ? { ...h, currentStreak: newStreak } : h
+                ),
             }))
 
-            // Recalculate streak
-            const habit = habits.find((h) => h.id === habitId)
-            if (habit) {
-                try {
-                    const newStreak = await completionsService.calculateStreak(habitId, userId, habit)
-                    await habitsService.updateHabit(habitId, { currentStreak: newStreak })
-                    set((state) => ({
-                        habits: state.habits.map((h) =>
-                            h.id === habitId ? { ...h, currentStreak: newStreak } : h
-                        ),
-                    }))
-                } catch (streakError) {
-                    console.error('Error updating streak:', streakError)
-                }
+            // Sync streak to Firestore in background (Source of Truth for now = Client Heuristic)
+            // We persist the heuristic value directly to avoid "bouncing" to 0 caused by missing history
+            habitsService.updateHabit(habitId, { currentStreak: newStreak }).catch(err =>
+                console.error('Background streak update failed:', err)
+            )
+        }
+
+        // 4. Update weekly stats for leaderboard (Aggregate Full Week)
+        try {
+            const { start, end } = getWeekRange(new Date())
+            let totalScheduled = 0
+            let totalCompleted = 0
+            const current = new Date(start)
+
+            // Loop through each day of the week to calculate REAL percentage
+            // We use the updated 'completions' state which now includes the change for 'date'
+            const currentCompletionsState = get().completions
+
+            while (current <= end) {
+                const currentDateStr = formatDate(current)
+
+                const daysHabits = get().getTodaysHabits(current) // Logic respects frequency
+                totalScheduled += daysHabits.length
+
+                const dayCompletions = currentCompletionsState[currentDateStr] || []
+                totalCompleted += dayCompletions.length
+
+                current.setDate(current.getDate() + 1)
             }
 
-            // Update weekly stats for leaderboard
-            try {
-                const todaysHabits = get().getTodaysHabits()
-                const today = new Date().toISOString().split('T')[0]
-                const todayCompletions = get().completions[today] || []
-                await updateWeeklyStats(userId, todaysHabits.length, todayCompletions.length)
-            } catch (statsError) {
-                console.error('Error updating weekly stats:', statsError)
-            }
+            // Sync to Firestore in background
+            updateWeeklyStats(userId, totalScheduled, totalCompleted).catch(err =>
+                console.error('Background leaderboard update failed:', err)
+            )
+        } catch (statsError) {
+            console.error('Error updating weekly stats:', statsError)
+        }
 
-            return result
+        // 5. Sync completion to Firestore
+        try {
+            await completionsService.toggleCompletion(habitId, userId, date, isCompleting)
         } catch (error) {
-            console.error('Error toggling completion:', error)
+            console.error('Error toggling completion in Firestore:', error)
+            // Revert on error (optional, but good practice)
             throw error
         }
     },
@@ -207,7 +317,7 @@ export const useHabitsStore = create((set, get) => ({
     getStatsForDate: (date) => {
         const { completions } = get()
         const todaysHabits = get().getTodaysHabits(date)
-        const dateStr = typeof date === 'string' ? date : date.toISOString().split('T')[0]
+        const dateStr = typeof date === 'string' ? date : formatDate(date)
         const dateCompletions = completions[dateStr] || []
 
         const completed = dateCompletions.length

@@ -56,11 +56,11 @@ function App() {
 
                 // Load user's habits from Firestore
                 try {
-                    await loadHabits(firebaseUser.uid)
+                    // We rely on subscribeToHabits for habits data (real-time & offline cache)
+                    // But we need to load completions for the whole week for the leaderboard logic
+                    const { loadCompletionsForWeek, subscribeToHabits } = useHabitsStore.getState() // Access latest state if needed, or use destructured
 
-                    // Load today's completions
-                    const today = new Date().toISOString().split('T')[0]
-                    await loadCompletionsForDate(firebaseUser.uid, today)
+                    await loadCompletionsForWeek(firebaseUser.uid)
 
                     // Subscribe to real-time habit updates
                     unsubscribeHabits = subscribeToHabits(firebaseUser.uid)

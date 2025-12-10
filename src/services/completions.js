@@ -1,38 +1,17 @@
+import {
+    collection,
+    doc,
+    addDoc,
+    deleteDoc,
+    getDocs,
+    query,
+    where,
+    orderBy,
+    onSnapshot,
+    serverTimestamp,
+} from 'firebase/firestore'
+import { db } from './firebase'
 import { formatDate } from '../utils/dateUtils'
-
-// ... existing imports ...
-
-// ... inside calculateStreak ...
-
-while (true) {
-    const dateStr = formatDate(currentDate)
-
-    if (!shouldTrackOnDay(currentDate)) {
-        currentDate.setDate(currentDate.getDate() - 1)
-        continue
-    }
-
-    if (currentDate.getTime() === today.getTime() && !completionSet.has(dateStr)) {
-        currentDate.setDate(currentDate.getDate() - 1)
-        continue
-    }
-
-    if (completionSet.has(dateStr)) {
-        streak++
-        currentDate.setDate(currentDate.getDate() - 1)
-    } else {
-        break
-    }
-
-    if (streak > 1000) break
-}
-
-return streak
-    } catch (error) {
-    console.error('Error calculating streak:', error)
-    return 0
-}
-}
 
 const COMPLETIONS_COLLECTION = 'completions'
 
@@ -229,6 +208,7 @@ export async function calculateStreak(habitId, userId, habit) {
         const completionSet = new Set(completions)
 
         while (true) {
+            // FIX: Use local date formatting instead of UTC to avoid timezone issues
             const dateStr = formatDate(currentDate)
 
             if (!shouldTrackOnDay(currentDate)) {

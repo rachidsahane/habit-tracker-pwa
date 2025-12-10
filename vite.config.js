@@ -8,7 +8,12 @@ export default defineConfig({
         react(),
         VitePWA({
             registerType: 'autoUpdate',
-            includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+            devOptions: {
+                enabled: true,
+                type: 'module',
+                navigateFallback: 'index.html'
+            },
+            includeAssets: ['favicon.png', 'apple-touch-icon.png'],
             manifest: {
                 name: 'Habit Tracker',
                 short_name: 'Habits',
