@@ -234,7 +234,7 @@ export default function Settings() {
                                     Version
                                 </span>
                                 <span className="text-text-light-secondary dark:text-text-dark-secondary">
-                                    1.4.0
+                                    1.5.4
                                 </span>
                             </div>
                             <div className="flex justify-between">

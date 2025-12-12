@@ -37,7 +37,7 @@ export default function ProgressFeed() {
 
             {/* Feed */}
             <main className="flex-grow pb-24">
-                {isLoading ? (
+                {isLoading && feedItems.length === 0 ? (
                     <div className="flex justify-center py-12">
                         <LoadingSpinner size="lg" />
                     </div>

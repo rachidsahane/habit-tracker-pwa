@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { collection, query, orderBy, limit, getDocs, startAfter } from 'firebase/firestore'
-import { db } from '../services/firebase'
+import { getPublicFeed } from '../services/feed'
 
 export const useFeedStore = create(
     persist(
@@ -24,21 +23,16 @@ export const useFeedStore = create(
                 set({ isLoading: true, error: null })
 
                 try {
-                    const q = query(
-                        collection(db, 'completions'),
-                        orderBy('timestamp', 'desc'),
-                        limit(20)
-                    )
+                    const posts = await getPublicFeed(20)
 
-                    const snapshot = await getDocs(q)
-                    const posts = snapshot.docs.map(doc => ({
-                        id: doc.id,
-                        ...doc.data(),
-                        // Convert timestamp to serializable format for Zustand persist
-                        timestamp: doc.data().timestamp?.toDate?.()?.toISOString() || new Date().toISOString()
+                    // Convert timestamps if needed, but getPublicFeed returns them.
+                    // We might need to serialize them for Zustand persist (JSON).
+                    const serializedPosts = posts.map(p => ({
+                        ...p,
+                        timestamp: p.timestamp?.toDate?.()?.toISOString() || p.timestamp
                     }))
 
-                    set({ posts, lastUpdated: now, isLoading: false })
+                    set({ posts: serializedPosts, lastUpdated: now, isLoading: false })
                 } catch (error) {
                     console.error('Error fetching feed:', error)
                     set({ error: error.message, isLoading: false })

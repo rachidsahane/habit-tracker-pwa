@@ -22,7 +22,8 @@ export default function Dashboard() {
         updateHabitProgress,
         getHabitValue,
         loadCompletionsForDate,
-        subscribeToHabits, // Destructure this
+        subscribeToHabits,
+        checkStreaks // New action
     } = useHabitsStore()
 
     const [selectedDate, setSelectedDate] = useState(new Date())
@@ -32,6 +33,7 @@ export default function Dashboard() {
     const selectedDateStr = formatDate(selectedDate)
     const isToday = selectedDateStr === todayStr
     const isFuture = selectedDateStr > todayStr
+    const isPast = selectedDateStr < todayStr
 
     const habitsForSelectedDay = getTodaysHabits(selectedDate)
     const { completed, total, percentage } = getStatsForDate(selectedDateStr)
@@ -50,6 +52,13 @@ export default function Dashboard() {
             return () => unsubscribe()
         }
     }, [user?.uid, subscribeToHabits])
+
+    // Run deep streak check once habits are loaded
+    useEffect(() => {
+        if (user?.uid && habits.length > 0) {
+            checkStreaks(user.uid)
+        }
+    }, [user?.uid, habits.length > 0]) // Simple dependency to retry if habits load later
 
     // Get greeting based on time of day
     const getGreeting = () => {
@@ -191,7 +200,7 @@ export default function Dashboard() {
                                 currentValue={getHabitValue(habit.id, selectedDateStr)}
                                 onToggle={handleToggleCompletion}
                                 onUpdateProgress={handleUpdateProgress}
-                                disabled={isFuture}
+                                disabled={isFuture || isPast}
                             />
                         ))
                     )}

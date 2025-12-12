@@ -102,6 +102,7 @@ export const useHabitsStore = create((set, get) => ({
         set({ isLoading: true, error: null })
         try {
             const habits = await habitsService.getUserHabits(userId)
+
             set({ habits, isLoading: false })
             return habits
         } catch (error) {
@@ -109,6 +110,69 @@ export const useHabitsStore = create((set, get) => ({
             set({ error: error.message, isLoading: false, habits: [] })
             throw error
         }
+    },
+
+    // Verified Streak Check (Callable from UI)
+    checkStreaks: async (userId) => {
+        const { habits } = get()
+        if (habits.length === 0) return
+
+        const today = new Date()
+        const yesterday = new Date(today)
+        yesterday.setDate(yesterday.getDate() - 1)
+        const yesterdayStr = formatDate(yesterday)
+
+        // Fetch completions for yesterday to verify streaks
+        let completionsMap = {}
+        try {
+            const yesterdayCompletions = await completionsService.getCompletionsForDate(userId, yesterdayStr)
+            yesterdayCompletions.forEach(c => {
+                completionsMap[c.habitId] = c
+            })
+        } catch (e) {
+            console.warn("Failed to fetch yesterday's completions for streak check", e)
+            return
+        }
+
+        habits.forEach(h => {
+            if (h.currentStreak > 0) {
+                let shouldReset = false
+
+                // DAILY CHECK
+                if (h.frequency === 'daily') {
+                    // Check if completed yesterday
+                    const completedYesterday = completionsMap[h.id]
+
+                    let achievedYesterday = false
+                    if (completedYesterday) {
+                        if (h.completionType === 'numerical') {
+                            achievedYesterday = (completedYesterday.value || 0) >= (h.targetValue || 1)
+                        } else {
+                            achievedYesterday = true
+                        }
+                    }
+
+                    if (!achievedYesterday) {
+                        shouldReset = true
+                    }
+                }
+
+                // ONE-TIME CHECK (Should be 0 always)
+                if (h.frequency === 'one-time') {
+                    shouldReset = true
+                }
+
+                if (shouldReset) {
+                    console.log(`Resetting streak for habit ${h.title} (Missed yesterday)`)
+                    // Optimistic update
+                    set((state) => ({
+                        habits: state.habits.map(curr => curr.id === h.id ? { ...curr, currentStreak: 0 } : curr)
+                    }))
+                    // Background update
+                    habitsService.updateHabit(h.id, { currentStreak: 0 }).catch(console.error)
+                }
+            }
+        })
     },
 
     // Subscribe to real-time habit updates
@@ -196,6 +260,12 @@ export const useHabitsStore = create((set, get) => ({
             return
         }
 
+        // Block past updates (Strict Mode)
+        if (date < todayStr) {
+            console.warn("Cannot modify past habits")
+            return
+        }
+
         // 1. Determine new state (Optimistic)
         const existingCompletion = dateCompletions.find(c => c.habitId === habitId)
         const isCompleting = !existingCompletion
@@ -233,13 +303,16 @@ export const useHabitsStore = create((set, get) => ({
             // Update local habit streak immediately
             set((state) => ({
                 habits: state.habits.map((h) =>
-                    h.id === habitId ? { ...h, currentStreak: newStreak } : h
+                    h.id === habitId ? { ...h, currentStreak: newStreak, lastCompletedDate: isCompleting ? date : h.lastCompletedDate } : h
                 ),
             }))
 
             // Sync streak to Firestore in background (Source of Truth for now = Client Heuristic)
             // We persist the heuristic value directly to avoid "bouncing" to 0 caused by missing history
-            habitsService.updateHabit(habitId, { currentStreak: newStreak }).catch(err =>
+            habitsService.updateHabit(habitId, {
+                currentStreak: newStreak,
+                lastCompletedDate: isCompleting ? date : (habit.lastCompletedDate || null)
+            }).catch(err =>
                 console.error('Background streak update failed:', err)
             )
         }
@@ -295,8 +368,16 @@ export const useHabitsStore = create((set, get) => ({
         const todayStr = formatDate(new Date())
         if (date > todayStr) return
 
+        // Block past updates (Strict Mode)
+        if (date < todayStr) {
+            console.warn("Cannot modify past habits")
+            return
+        }
+
         // 1. Determine new state (Optimistic)
         const existingCompletion = dateCompletions.find(c => c.habitId === habitId)
+        const wasCompleted = existingCompletion && (existingCompletion.value || 0) >= (habit.targetValue || 1)
+        const isNowCompleted = newValue >= (habit.targetValue || 1)
 
         let newCompletions
         if (newValue > 0) {
@@ -322,7 +403,35 @@ export const useHabitsStore = create((set, get) => ({
             },
         }))
 
-        // 3. Sync to Firestore
+        // 3. Update Streak if completion status changed
+        if (habit && wasCompleted !== isNowCompleted) {
+            let newStreak = habit.currentStreak || 0
+
+            if (isNowCompleted) {
+                // Completed
+                newStreak = newStreak + 1
+            } else {
+                // Uncompleted
+                newStreak = Math.max(0, newStreak - 1)
+            }
+
+            // Update local habit streak immediately
+            set((state) => ({
+                habits: state.habits.map((h) =>
+                    h.id === habitId ? { ...h, currentStreak: newStreak, lastCompletedDate: isNowCompleted ? date : h.lastCompletedDate } : h
+                ),
+            }))
+
+            // Sync streak to Firestore
+            habitsService.updateHabit(habitId, {
+                currentStreak: newStreak,
+                lastCompletedDate: isNowCompleted ? date : (habit.lastCompletedDate || null)
+            }).catch(err =>
+                console.error('Background streak update failed:', err)
+            )
+        }
+
+        // 4. Sync to Firestore
         try {
             await completionsService.updateCompletionValue(habitId, userId, date, newValue)
         } catch (error) {
