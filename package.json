@@ -1,12 +1,12 @@
 {
     "name": "habit-tracker-pwa",
     "private": true,
-    "version": "1.0.0",
+    "version": "1.4.0",
     "type": "module",
     "scripts": {
         "dev": "vite",
         "build": "vite build",
-        "deploy": "gh-pages -d dist -b app",
+        "deploy": "vite build && gh-pages -d dist -b app",
         "preview": "vite preview"
     },
     "dependencies": {

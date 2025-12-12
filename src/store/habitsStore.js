@@ -285,11 +285,74 @@ export const useHabitsStore = create((set, get) => ({
         }
     },
 
+    // Update habit progress (Numerical)
+    updateHabitProgress: async (habitId, userId, date, newValue) => {
+        const { completions, habits } = get()
+        const dateCompletions = completions[date] || []
+        const habit = habits.find((h) => h.id === habitId)
+
+        // Block future updates
+        const todayStr = formatDate(new Date())
+        if (date > todayStr) return
+
+        // 1. Determine new state (Optimistic)
+        const existingCompletion = dateCompletions.find(c => c.habitId === habitId)
+
+        let newCompletions
+        if (newValue > 0) {
+            if (existingCompletion) {
+                // Update existing
+                newCompletions = dateCompletions.map(c =>
+                    c.habitId === habitId ? { ...c, value: newValue } : c
+                )
+            } else {
+                // Add new
+                newCompletions = [...dateCompletions, { habitId, userId, date, value: newValue, isOptimistic: true }]
+            }
+        } else {
+            // Remove if <= 0
+            newCompletions = dateCompletions.filter((c) => c.habitId !== habitId)
+        }
+
+        // 2. Update local state immediately
+        set((state) => ({
+            completions: {
+                ...state.completions,
+                [date]: newCompletions,
+            },
+        }))
+
+        // 3. Sync to Firestore
+        try {
+            await completionsService.updateCompletionValue(habitId, userId, date, newValue)
+        } catch (error) {
+            console.error('Error updating progress:', error)
+        }
+    },
+
     // Check if habit is completed for a date
     isHabitCompleted: (habitId, date) => {
+        const { completions, habits } = get()
+        const dateCompletions = completions[date] || []
+        const completion = dateCompletions.find((c) => c.habitId === habitId)
+        const habit = habits.find(h => h.id === habitId)
+
+        if (!completion) return false
+
+        // For numerical habits, check if value >= target
+        if (habit?.completionType === 'numerical' && habit.targetValue) {
+            return (completion.value || 0) >= habit.targetValue
+        }
+
+        return true
+    },
+
+    // Get completion value (for numerical)
+    getHabitValue: (habitId, date) => {
         const { completions } = get()
         const dateCompletions = completions[date] || []
-        return dateCompletions.some((c) => c.habitId === habitId)
+        const completion = dateCompletions.find((c) => c.habitId === habitId)
+        return completion?.value || 0
     },
 
     // Get today's habits based on frequency and custom days
@@ -304,27 +367,44 @@ export const useHabitsStore = create((set, get) => ({
                 // customDays is an array of day numbers (0-6)
                 return habit.customDays.includes(dayOfWeek)
             }
+            if (habit.frequency === 'one-time') {
+                const checkDateStr = formatDate(targetDate)
+                return habit.targetDate === checkDateStr
+            }
             if (habit.frequency === 'weekly') {
                 // Weekly habits show on the day they were created
                 const createdDate = habit.createdAt?.toDate?.() || new Date(habit.createdAt)
                 return createdDate.getDay() === dayOfWeek
             }
-            return true
+            return false
         })
     },
 
     // Get completion stats for a date
     getStatsForDate: (date) => {
-        const { completions } = get()
+        const { completions, habits } = get()
         const todaysHabits = get().getTodaysHabits(date)
         const dateStr = typeof date === 'string' ? date : formatDate(date)
         const dateCompletions = completions[dateStr] || []
 
-        const completed = dateCompletions.length
-        const total = todaysHabits.length
-        const percentage = total > 0 ? Math.round((completed / total) * 100) : 0
+        // Filter based on habit type & targets
+        const completedCount = todaysHabits.reduce((acc, habit) => {
+            const completion = dateCompletions.find(c => c.habitId === habit.id)
+            if (!completion) return acc
 
-        return { completed, total, percentage }
+            if (habit.completionType === 'numerical' && habit.targetValue) {
+                if ((completion.value || 0) >= habit.targetValue) return acc + 1
+            } else {
+                // Checkbox habit - presence means completed
+                return acc + 1
+            }
+            return acc
+        }, 0)
+
+        const total = todaysHabits.length
+        const percentage = total > 0 ? Math.round((completedCount / total) * 100) : 0
+
+        return { completed: completedCount, total, percentage }
     },
 
     // Clear all data (for logout)

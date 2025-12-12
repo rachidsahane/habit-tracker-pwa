@@ -149,3 +149,26 @@ export async function getPublicHabits(limit = 50) {
         throw error
     }
 }
+
+/**
+ * Get public habits for a specific user (for profile view)
+ */
+export async function getPublicHabitsForUser(userId) {
+    try {
+        const habitsRef = collection(db, HABITS_COLLECTION)
+        const q = query(
+            habitsRef,
+            where('userId', '==', userId),
+            where('isPublic', '==', true),
+            orderBy('createdAt', 'desc')
+        )
+        const snapshot = await getDocs(q)
+        return snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+        }))
+    } catch (error) {
+        console.error('Error getting user public habits:', error)
+        throw error
+    }
+}

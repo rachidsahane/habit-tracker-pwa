@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { signOut } from '../services/auth'
 import { useAuthStore } from '../store/authStore'
 import { useHabitsStore } from '../store/habitsStore'
+import { updateUserSettings } from '../services/users'
 import BottomNav from '../components/common/BottomNav'
 import Button from '../components/common/Button'
 import Toggle from '../components/common/Toggle'
+import { requestPermission } from '../services/notifications'
 
 export default function Settings() {
     const navigate = useNavigate()
@@ -16,6 +18,33 @@ export default function Settings() {
     )
     const [isLoggingOut, setIsLoggingOut] = useState(false)
 
+    // Notifications State
+    const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
+        const params = JSON.parse(localStorage.getItem('habitParams')) || {}
+        return params.notificationsEnabled || false
+    })
+    const [reminderTime, setReminderTime] = useState(() => {
+        const params = JSON.parse(localStorage.getItem('habitParams')) || {}
+        return params.reminderTime || '09:00'
+    })
+
+    const saveSettings = async (newSettings) => {
+        const current = JSON.parse(localStorage.getItem('habitParams')) || {}
+        const updated = { ...current, ...newSettings }
+
+        // 1. Save locally
+        localStorage.setItem('habitParams', JSON.stringify(updated))
+
+        // 2. Sync to Firestore (if logged in)
+        if (user?.uid) {
+            try {
+                await updateUserSettings(user.uid, { settings: updated })
+            } catch (err) {
+                console.error("Failed to sync settings to cloud:", err)
+            }
+        }
+    }
+
     const handleToggleDarkMode = (enabled) => {
         setDarkMode(enabled)
         if (enabled) {
@@ -25,6 +54,28 @@ export default function Settings() {
             document.documentElement.classList.remove('dark')
             localStorage.setItem('theme', 'light')
         }
+    }
+
+    const handleToggleNotifications = async (enabled) => {
+        if (enabled) {
+            const granted = await requestPermission()
+            if (granted) {
+                setNotificationsEnabled(true)
+                saveSettings({ notificationsEnabled: true })
+            } else {
+                setNotificationsEnabled(false)
+                alert('Notification permission denied. Please enable it in your browser settings.')
+            }
+        } else {
+            setNotificationsEnabled(false)
+            saveSettings({ notificationsEnabled: false })
+        }
+    }
+
+    const handleReminderTimeChange = (e) => {
+        const time = e.target.value
+        setReminderTime(time)
+        saveSettings({ reminderTime: time })
     }
 
     const handleLogout = async () => {
@@ -146,6 +197,30 @@ export default function Settings() {
                             checked={darkMode}
                             onChange={handleToggleDarkMode}
                         />
+
+                        <div className="my-4 h-px bg-border-light dark:bg-border-dark/50" />
+
+                        <div className="flex flex-col gap-4">
+                            <Toggle
+                                label="Daily Reminders"
+                                checked={notificationsEnabled}
+                                onChange={handleToggleNotifications}
+                            />
+
+                            {notificationsEnabled && (
+                                <div className="flex items-center justify-between animation-slide-down">
+                                    <span className="text-text-light-primary dark:text-text-dark-primary">
+                                        Reminder Time
+                                    </span>
+                                    <input
+                                        type="time"
+                                        value={reminderTime}
+                                        onChange={handleReminderTimeChange}
+                                        className="bg-gray-100 dark:bg-gray-800 border-none rounded-lg p-2 text-text-light-primary dark:text-white focus:ring-2 focus:ring-primary"
+                                    />
+                                </div>
+                            )}
+                        </div>
                     </section>
 
                     {/* App Info */}
@@ -159,7 +234,7 @@ export default function Settings() {
                                     Version
                                 </span>
                                 <span className="text-text-light-secondary dark:text-text-dark-secondary">
-                                    1.0.0
+                                    1.4.0
                                 </span>
                             </div>
                             <div className="flex justify-between">

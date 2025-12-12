@@ -22,7 +22,8 @@ export default defineConfig({
                 theme_color: '#13ec5b',
                 background_color: '#f6f8f6',
                 display: 'standalone',
-                start_url: '/',
+                scope: '/habit-tracker-pwa/',
+                start_url: '/habit-tracker-pwa/',
                 icons: [
                     {
                         src: 'pwa-192x192.png',
@@ -43,6 +44,9 @@ export default defineConfig({
                 ]
             },
             workbox: {
+                cleanupOutdatedCaches: true,
+                clientsClaim: true,
+                skipWaiting: true,
                 globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
                 runtimeCaching: [
                     {

@@ -4,6 +4,8 @@ import { useAuthStore } from './store/authStore'
 import { useHabitsStore } from './store/habitsStore'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from './services/firebase'
+import { checkDailyReminder } from './services/notifications'
+import { getUserProfile } from './services/users'
 
 // Pages
 import Welcome from './pages/Welcome'
@@ -12,6 +14,7 @@ import NewHabit from './pages/NewHabit'
 import EditHabit from './pages/EditHabit'
 import HabitDetails from './pages/HabitDetails'
 import Leaderboard from './pages/Leaderboard'
+import UserProfile from './pages/UserProfile'
 import ProgressFeed from './pages/ProgressFeed'
 import Settings from './pages/Settings'
 
@@ -21,6 +24,25 @@ import LoadingSpinner from './components/common/LoadingSpinner'
 // Protected Route wrapper
 function ProtectedRoute({ children }) {
     const { isAuthenticated, isLoading } = useAuthStore()
+
+    // Check for notifications
+    useEffect(() => {
+        try {
+            checkDailyReminder()
+        } catch (e) {
+            console.error("Notification check failed", e)
+        }
+
+        // check every minute
+        const interval = setInterval(() => {
+            try {
+                checkDailyReminder()
+            } catch (e) {
+                console.error("Notification interval failed", e)
+            }
+        }, 60000)
+        return () => clearInterval(interval)
+    }, [])
 
     if (isLoading) {
         return (
@@ -56,6 +78,12 @@ function App() {
 
                 // Load user's habits from Firestore
                 try {
+                    // Load User Settings (sync to local)
+                    const profile = await getUserProfile(firebaseUser.uid)
+                    if (profile?.settings) {
+                        localStorage.setItem('habitParams', JSON.stringify(profile.settings))
+                    }
+
                     // We rely on subscribeToHabits for habits data (real-time & offline cache)
                     // But we need to load completions for the whole week for the leaderboard logic
                     const { loadCompletionsForWeek, subscribeToHabits } = useHabitsStore.getState() // Access latest state if needed, or use destructured
@@ -138,6 +166,14 @@ function App() {
                         element={
                             <ProtectedRoute>
                                 <Leaderboard />
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
+                        path="/profile/:userId"
+                        element={
+                            <ProtectedRoute>
+                                <UserProfile />
                             </ProtectedRoute>
                         }
                     />

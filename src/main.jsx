@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import ErrorBoundary from './components/common/ErrorBoundary'
 import './index.css'
 
 // IMPORTANT: Clear all old localStorage data from previous versions
@@ -15,16 +16,13 @@ keysToRemove.forEach(key => {
 })
 
 // Also clear any other potential cached data
-const allKeys = Object.keys(localStorage)
-allKeys.forEach(key => {
-    if (key.startsWith('zustand') || key.includes('habit') || key.includes('auth')) {
-        localStorage.removeItem(key)
-        console.log(`[Init] Cleared cached data: ${key}`)
-    }
-})
+// Also clear any other potential cached data
+// Removed aggressive clearing to preserve settings (habitParams)
 
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
-        <App />
+        <ErrorBoundary>
+            <App />
+        </ErrorBoundary>
     </React.StrictMode>,
 )

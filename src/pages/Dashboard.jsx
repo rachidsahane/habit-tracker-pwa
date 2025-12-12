@@ -19,6 +19,8 @@ export default function Dashboard() {
         getStatsForDate,
         isHabitCompleted,
         toggleCompletion,
+        updateHabitProgress,
+        getHabitValue,
         loadCompletionsForDate,
         subscribeToHabits, // Destructure this
     } = useHabitsStore()
@@ -68,13 +70,22 @@ export default function Dashboard() {
         }
     }
 
+    const handleUpdateProgress = async (habitId, newValue) => {
+        if (!user?.uid) return
+        try {
+            await updateHabitProgress(habitId, user.uid, selectedDateStr, newValue)
+        } catch (error) {
+            console.error('Error updating progress:', error)
+        }
+    }
+
     const handleDateSelect = (date) => {
         setSelectedDate(date)
     }
 
     return (
         <div className="relative flex h-auto min-h-screen w-full flex-col overflow-x-hidden">
-            <div className="flex-grow pb-28">
+            <div className="flex-grow pb-40">
                 {/* Desktop Header/Hero Section */}
                 <div className="md:min-h-[50vh] md:flex md:flex-col md:justify-center md:bg-gray-50/50 md:dark:bg-gray-900/50">
                     {/* Header */}
@@ -177,7 +188,9 @@ export default function Dashboard() {
                                 key={habit.id}
                                 habit={habit}
                                 isCompleted={isHabitCompleted(habit.id, selectedDateStr)}
+                                currentValue={getHabitValue(habit.id, selectedDateStr)}
                                 onToggle={handleToggleCompletion}
+                                onUpdateProgress={handleUpdateProgress}
                                 disabled={isFuture}
                             />
                         ))

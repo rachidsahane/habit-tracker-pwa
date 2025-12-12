@@ -1,28 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getPublicFeed, getTimeAgo } from '../services/feed'
+import { useFeedStore } from '../store/feedStore'
+import { getTimeAgo } from '../services/feed'
 import BottomNav from '../components/common/BottomNav'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 
 export default function ProgressFeed() {
     const navigate = useNavigate()
-    const [feedItems, setFeedItems] = useState([])
-    const [isLoading, setIsLoading] = useState(true)
+    const { posts: feedItems, isLoading, fetchFeed } = useFeedStore()
 
     useEffect(() => {
-        const loadFeed = async () => {
-            setIsLoading(true)
-            try {
-                const items = await getPublicFeed(50)
-                setFeedItems(items)
-            } catch (error) {
-                console.error('Error loading feed:', error)
-            } finally {
-                setIsLoading(false)
-            }
-        }
-
-        loadFeed()
+        fetchFeed()
     }, [])
 
     return (

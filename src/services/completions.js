@@ -88,6 +88,43 @@ export async function toggleCompletion(habitId, userId, date, value = true) {
 }
 
 /**
+ * Update completion value (for numerical habits)
+ * Creates if not exists, updates if exists, removes if value <= 0
+ */
+export async function updateCompletionValue(habitId, userId, date, value) {
+    try {
+        if (value <= 0) {
+            await removeCompletion(habitId, userId, date)
+            return null
+        }
+
+        const completionsRef = collection(db, COMPLETIONS_COLLECTION)
+        const q = query(
+            completionsRef,
+            where('habitId', '==', habitId),
+            where('userId', '==', userId),
+            where('date', '==', date)
+        )
+        const snapshot = await getDocs(q)
+
+        if (snapshot.empty) {
+            return await addCompletion(habitId, userId, date, value)
+        } else {
+            // Update existing
+            const docRef = snapshot.docs[0].ref
+            await deleteDoc(docRef) // Simplest way to "update" in this architecture without separate update func, or we could use updateDoc
+            // Actually, better to use setDoc or updateDoc but we need to import them. 
+            // Reuse addCompletion for consistency with current flow? No, that creates duplicates if we don't delete.
+            // Let's just use addCompletion after delete, effectively a replace.
+            return await addCompletion(habitId, userId, date, value)
+        }
+    } catch (error) {
+        console.error('Error updating completion value:', error)
+        throw error
+    }
+}
+
+/**
  * Get all completions for a user on a specific date
  */
 export async function getCompletionsForDate(userId, date) {

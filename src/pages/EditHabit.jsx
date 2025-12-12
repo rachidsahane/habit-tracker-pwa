@@ -9,6 +9,7 @@ import DaySelector from '../components/habits/DaySelector'
 const FREQUENCY_OPTIONS = [
     { value: 'daily', label: 'Daily' },
     { value: 'weekly', label: 'Weekly' },
+    { value: 'one-time', label: 'One Time' },
     { value: 'custom', label: 'More' },
 ]
 
@@ -28,6 +29,11 @@ export default function EditHabit() {
     const [frequency, setFrequency] = useState('daily')
     const [customDays, setCustomDays] = useState([])
     const [trackingType, setTrackingType] = useState('checkbox')
+    const [targetValue, setTargetValue] = useState('')
+    const [unit, setUnit] = useState('')
+    const [targetDate, setTargetDate] = useState(new Date().toISOString().split('T')[0])
+    const [reminderTime, setReminderTime] = useState('')
+    const [hasReminder, setHasReminder] = useState(false)
     const [isPrivate, setIsPrivate] = useState(false)
     const [showDaySelector, setShowDaySelector] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
@@ -39,6 +45,11 @@ export default function EditHabit() {
             setFrequency(habit.frequency || 'daily')
             setCustomDays(habit.customDays || [])
             setTrackingType(habit.completionType || 'checkbox')
+            setTargetValue(habit.targetValue || '')
+            setUnit(habit.unit || '')
+            setTargetDate(habit.targetDate || new Date().toISOString().split('T')[0])
+            setReminderTime(habit.reminderTime || '')
+            setHasReminder(habit.hasReminder || false)
             setIsPrivate(!habit.isPublic)
         }
     }, [habit])
@@ -58,7 +69,9 @@ export default function EditHabit() {
         )
     }
 
-    const isValid = name.trim().length > 0
+    const isValid = name.trim().length > 0 &&
+        (trackingType === 'checkbox' || (targetValue > 0 && unit.trim().length > 0)) &&
+        (frequency !== 'one-time' || targetDate)
 
     const handleFrequencyChange = (value) => {
         setFrequency(value)
@@ -76,7 +89,12 @@ export default function EditHabit() {
                 title: name.trim(),
                 frequency,
                 customDays: frequency === 'custom' ? customDays : [],
+                targetDate: frequency === 'one-time' ? targetDate : null,
+                reminderTime: reminderTime || null,
+                hasReminder: hasReminder && !!reminderTime,
                 completionType: trackingType,
+                targetValue: trackingType === 'numerical' ? Number(targetValue) : null,
+                unit: trackingType === 'numerical' ? unit.trim() : null,
                 isPublic: !isPrivate,
             })
             navigate(`/habit/${habitId}`)
@@ -137,8 +155,8 @@ export default function EditHabit() {
                             <label
                                 key={option.value}
                                 className={`
-                  flex h-full flex-1 cursor-pointer items-center justify-center overflow-hidden rounded-md px-2 
-                  text-sm font-medium leading-normal transition-all
+                  flex h-full flex-1 cursor-pointer items-center justify-center overflow-hidden rounded-md px-1 
+                  text-xs font-medium leading-normal transition-all
                   ${frequency === option.value
                                         ? 'bg-white dark:bg-gray-900 text-text-light-primary dark:text-white shadow-sm'
                                         : 'text-gray-600 dark:text-gray-400'
@@ -164,6 +182,20 @@ export default function EditHabit() {
                             </label>
                         ))}
                     </div>
+
+                    {/* One Time Date Picker */}
+                    {frequency === 'one-time' && (
+                        <div className="mt-3 animation-slide-down">
+                            <Input
+                                label="Valid only on"
+                                type="date"
+                                value={targetDate}
+                                onChange={(e) => setTargetDate(e.target.value)}
+                                min={new Date().toISOString().split('T')[0]}
+                            />
+                        </div>
+                    )}
+
                     {frequency === 'custom' && customDays.length > 0 && (
                         <button
                             onClick={() => setShowDaySelector(true)}
@@ -172,6 +204,43 @@ export default function EditHabit() {
                             {customDays.length} days selected - tap to edit
                         </button>
                     )}
+                    {frequency === 'custom' && customDays.length === 0 && (
+                        <button
+                            onClick={() => setShowDaySelector(true)}
+                            className="mt-2 text-sm text-gray-500 hover:text-primary text-left"
+                        >
+                            Click to select days
+                        </button>
+                    )}
+                </div>
+
+                {/* Reminder / Time */}
+                <div className="flex flex-col gap-2">
+                    <h3 className="text-base font-medium leading-tight tracking-[-0.015em] text-gray-800 dark:text-gray-400 uppercase">
+                        Schedule
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                        <Input
+                            label="Time (Optional)"
+                            type="time"
+                            value={reminderTime}
+                            onChange={(e) => {
+                                setReminderTime(e.target.value)
+                                if (e.target.value && !hasReminder) setHasReminder(true)
+                            }}
+                        />
+                        <div className="flex items-end pb-2">
+                            <Toggle
+                                label="Remind 10m before"
+                                checked={hasReminder}
+                                onChange={setHasReminder}
+                                disabled={!reminderTime}
+                            />
+                        </div>
+                    </div>
+                    {hasReminder && !reminderTime && (
+                        <p className="text-xs text-danger">Please set a time to enable reminders.</p>
+                    )}
                 </div>
 
                 {/* Tracking Type */}
@@ -179,7 +248,7 @@ export default function EditHabit() {
                     <h3 className="text-base font-medium leading-tight tracking-[-0.015em] pb-2 text-gray-800 dark:text-gray-400 uppercase">
                         How will you track it?
                     </h3>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-3 mb-4">
                         {TRACKING_TYPES.map((type) => (
                             <label
                                 key={type.value}
@@ -206,6 +275,27 @@ export default function EditHabit() {
                             </label>
                         ))}
                     </div>
+
+                    {/* Numerical Inputs */}
+                    {trackingType === 'numerical' && (
+                        <div className="grid grid-cols-2 gap-4 mb-4 animation-slide-down">
+                            <Input
+                                label="Target Goal"
+                                type="number"
+                                placeholder="e.g. 5"
+                                value={targetValue}
+                                onChange={(e) => setTargetValue(e.target.value)}
+                                min="1"
+                            />
+                            <Input
+                                label="Unit"
+                                type="text"
+                                placeholder="e.g. cups"
+                                value={unit}
+                                onChange={(e) => setUnit(e.target.value)}
+                            />
+                        </div>
+                    )}
                 </div>
 
                 {/* Privacy Toggle */}

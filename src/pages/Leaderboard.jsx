@@ -148,7 +148,10 @@ export default function Leaderboard() {
                     <div className="flex items-end justify-center gap-4 px-4 py-6">
                         {/* 2nd Place */}
                         {topThree[1] && (
-                            <div className="flex flex-col items-center gap-2">
+                            <div
+                                className="flex flex-col items-center gap-2 cursor-pointer transition-transform active:scale-95"
+                                onClick={() => navigate(`/profile/${topThree[1].userId}`)}
+                            >
                                 <div className="relative">
                                     {topThree[1].photoURL ? (
                                         <img
@@ -173,7 +176,10 @@ export default function Leaderboard() {
 
                         {/* 1st Place */}
                         {topThree[0] && (
-                            <div className="flex flex-col items-center gap-2">
+                            <div
+                                className="flex flex-col items-center gap-2 cursor-pointer transition-transform active:scale-95"
+                                onClick={() => navigate(`/profile/${topThree[0].userId}`)}
+                            >
                                 <div className="relative">
                                     {topThree[0].photoURL ? (
                                         <img
@@ -198,7 +204,10 @@ export default function Leaderboard() {
 
                         {/* 3rd Place */}
                         {topThree[2] && (
-                            <div className="flex flex-col items-center gap-2">
+                            <div
+                                className="flex flex-col items-center gap-2 cursor-pointer transition-transform active:scale-95"
+                                onClick={() => navigate(`/profile/${topThree[2].userId}`)}
+                            >
                                 <div className="relative">
                                     {topThree[2].photoURL ? (
                                         <img
@@ -257,7 +266,8 @@ export default function Leaderboard() {
                         {listToDisplay.map((person) => (
                             <div
                                 key={person.id}
-                                className={`flex items-center gap-4 rounded-xl p-3 shadow-sm ${person.userId === user?.uid
+                                onClick={() => navigate(`/profile/${person.userId}`)}
+                                className={`flex items-center gap-4 rounded-xl p-3 shadow-sm cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${person.userId === user?.uid
                                     ? 'bg-primary/10 dark:bg-primary/20 border border-primary/50'
                                     : 'bg-white dark:bg-background-dark'
                                     }`}
