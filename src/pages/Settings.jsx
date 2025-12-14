@@ -8,6 +8,7 @@ import BottomNav from '../components/common/BottomNav'
 import Button from '../components/common/Button'
 import Toggle from '../components/common/Toggle'
 import { requestPermission } from '../services/notifications'
+import { syncHabitsToCalendar } from '../services/calendar'
 
 export default function Settings() {
     const navigate = useNavigate()
@@ -17,6 +18,25 @@ export default function Settings() {
         document.documentElement.classList.contains('dark')
     )
     const [isLoggingOut, setIsLoggingOut] = useState(false)
+    const [isSyncing, setIsSyncing] = useState(false)
+
+    const handleSyncCalendar = async () => {
+        if (!user || isSyncing) return
+        setIsSyncing(true)
+        try {
+            const result = await syncHabitsToCalendar(habits, user.uid)
+            let msg = `Sync Complete!\n✅ ${result.success} habits synced\n❌ ${result.failed} failed`
+            if (result.failed > 0 && result.errors?.length > 0) {
+                msg += `\n\nErrors:\n${result.errors.slice(0, 3).join('\n')}`
+            }
+            alert(msg)
+        } catch (error) {
+            console.error(error)
+            alert('Sync failed: ' + error.message)
+        } finally {
+            setIsSyncing(false)
+        }
+    }
 
     // Notifications State
     const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
@@ -221,6 +241,26 @@ export default function Settings() {
                                 </div>
                             )}
                         </div>
+                        {/* Integrations */}
+                        <section className="bg-content-light dark:bg-content-dark rounded-xl p-4">
+                            <h3 className="text-sm font-medium text-text-light-secondary dark:text-text-dark-secondary uppercase mb-4">
+                                Integrations
+                            </h3>
+                            <div className="flex items-center justify-center">
+                                <Button
+                                    fullWidth
+                                    variant="secondary"
+                                    onClick={handleSyncCalendar}
+                                    isLoading={isSyncing}
+                                    icon="calendar_month"
+                                >
+                                    Sync to Google Calendar
+                                </Button>
+                            </div>
+                            <p className="text-xs text-text-light-secondary dark:text-text-dark-secondary mt-2 text-center">
+                                Creates recurring events for your habits.
+                            </p>
+                        </section>
                     </section>
 
                     {/* App Info */}
@@ -234,7 +274,7 @@ export default function Settings() {
                                     Version
                                 </span>
                                 <span className="text-text-light-secondary dark:text-text-dark-secondary">
-                                    1.5.4
+                                    1.9.3
                                 </span>
                             </div>
                             <div className="flex justify-between">

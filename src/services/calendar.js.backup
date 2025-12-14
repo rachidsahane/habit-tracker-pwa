@@ -1,0 +1,238 @@
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
+import { auth, db } from './firebase'
+import { doc, updateDoc } from 'firebase/firestore'
+
+const CALENDAR_TOKEN_KEY = 'gcal_token'
+const TOKEN_EXPIRY_MS = 50 * 60 * 1000 // 50 minutes (tokens typically last 1 hour)
+
+/**
+ * Store calendar token with expiry
+ */
+function storeCalendarToken(token) {
+    const data = {
+        token,
+        expiry: Date.now() + TOKEN_EXPIRY_MS
+    }
+    localStorage.setItem(CALENDAR_TOKEN_KEY, JSON.stringify(data))
+}
+
+/**
+ * Get calendar token if not expired
+ */
+function getCalendarToken() {
+    const stored = localStorage.getItem(CALENDAR_TOKEN_KEY)
+    if (!stored) return null
+
+    const data = JSON.parse(stored)
+    if (Date.now() > data.expiry) {
+        localStorage.removeItem(CALENDAR_TOKEN_KEY)
+        return null
+    }
+
+    return data.token
+}
+
+/**
+ * Auto-sync a single habit (for create/update operations)
+ * Silently fails if no token available
+ */
+export async function autoSyncHabit(habit, userId) {
+    const token = getCalendarToken()
+    if (!token) return // Silently skip if no token
+
+    try {
+        await syncSingleHabit(habit, token, userId)
+    } catch (error) {
+        console.warn('Auto-sync failed:', error.message)
+    }
+}
+
+/**
+ * Delete a habit from calendar
+ */
+export async function deleteCalendarEvent(googleEventId) {
+    const token = getCalendarToken()
+    if (!token || !googleEventId) return
+
+    try {
+        const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${googleEventId}`
+        await fetch(url, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+    } catch (error) {
+        console.warn('Failed to delete calendar event:', error.message)
+    }
+}
+
+/**
+ * Syncs user habits to Google Calendar
+ * @param {Array} habits - List of habit objects
+ * @param {string} userId - Current user ID
+ * @returns {Promise<{success: number, failed: number}>}
+ */
+export async function syncHabitsToCalendar(habits, userId) {
+    console.log('Starting Calendar Sync...')
+
+    // 1. Authenticate with Calendar Scope
+    const provider = new GoogleAuthProvider()
+    provider.addScope('https://www.googleapis.com/auth/calendar.events')
+
+    let accessToken
+    try {
+        // Force re-auth to ensure we get a fresh token with scopes
+        // Note: usage of prompt: 'consent' forces the consent screen to ensure we get the scope
+        provider.setCustomParameters({
+            prompt: 'consent'
+        })
+
+        const result = await signInWithPopup(auth, provider)
+        const credential = GoogleAuthProvider.credentialFromResult(result)
+        accessToken = credential.accessToken
+
+        if (!accessToken) throw new Error('No access token returned')
+
+        // Store token for future auto-syncs
+        storeCalendarToken(accessToken)
+    } catch (error) {
+        console.error('Calendar Auth Error:', error)
+        throw new Error('Failed to authorize Google Calendar access')
+    }
+
+    // 2. Iterate and Sync Habits
+    let successCount = 0
+    let failCount = 0
+    const errors = []
+
+    for (const habit of habits) {
+        try {
+            await syncSingleHabit(habit, accessToken, userId)
+            successCount++
+        } catch (error) {
+            console.error(`Failed to sync habit: ${habit.title}`, error)
+            failCount++
+            errors.push(`${habit.title}: ${error.message}`)
+        }
+    }
+
+    return { success: successCount, failed: failCount, errors }
+}
+
+async function syncSingleHabit(habit, token, userId) {
+    const event = createEventBody(habit)
+
+    // Determine if creating or updating
+    const isUpdate = !!habit.googleEventId
+    const method = isUpdate ? 'PATCH' : 'POST'
+    const url = isUpdate
+        ? `https://www.googleapis.com/calendar/v3/calendars/primary/events/${habit.googleEventId}`
+        : `https://www.googleapis.com/calendar/v3/calendars/primary/events`
+
+    const response = await fetch(url, {
+        method,
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(event)
+    })
+
+    if (!response.ok) {
+        // If 404 (Event deleted in Calendar), try creating a new one
+        if (response.status === 404 && isUpdate) {
+            console.warn('Event not found, cleaning up ID and creating new one...')
+            // Recursively call as creation (ignoring old ID)
+            const cleanHabit = { ...habit, googleEventId: null }
+            return syncSingleHabit(cleanHabit, token, userId)
+        }
+
+        const errData = await response.json()
+        throw new Error(errData.error?.message || 'Calendar API Error')
+    }
+
+    const data = await response.json()
+
+    // Save event ID if valuable and new
+    if (!habit.googleEventId || habit.googleEventId !== data.id) {
+        const habitRef = doc(db, 'habits', habit.id)
+        await updateDoc(habitRef, { googleEventId: data.id })
+    }
+}
+
+function createEventBody(habit) {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+    // RRULE Generation
+    let recurrence = []
+    if (habit.frequency === 'daily') {
+        recurrence = ['RRULE:FREQ=DAILY']
+    } else if (habit.frequency === 'weekly') {
+        recurrence = ['RRULE:FREQ=WEEKLY']
+    } else if (habit.frequency === 'custom' && habit.customDays?.length > 0) {
+        // Map day numbers (0-6) to BYDAY format
+        const dayMap = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
+        const apiDays = habit.customDays
+            .map(dayNum => dayMap[dayNum])
+            .filter(Boolean)
+            .join(',')
+
+        if (apiDays) {
+            recurrence = [`RRULE:FREQ=WEEKLY;BYDAY=${apiDays}`]
+        }
+    }
+
+    // Determine if this is a timed or all-day event
+    const hasTime = !!habit.reminderTime
+
+    if (hasTime) {
+        // Timed event with 1-hour duration
+        const today = new Date().toISOString().split('T')[0]
+        const startDateTime = `${today}T${habit.reminderTime}:00`
+        const startDate = new Date(startDateTime)
+        const endDate = new Date(startDate.getTime() + 60 * 60000) // 1 hour
+
+        return {
+            summary: `🎯 ${habit.title}`,
+            description: `Track your habit: ${habit.title} in the Habit Tracker App!`,
+            start: {
+                dateTime: startDate.toISOString(),
+                timeZone
+            },
+            end: {
+                dateTime: endDate.toISOString(),
+                timeZone
+            },
+            recurrence: recurrence.length > 0 ? recurrence : undefined,
+            reminders: {
+                useDefault: false,
+                overrides: [
+                    { method: 'popup', minutes: 10 },
+                    { method: 'popup', minutes: 0 },
+                ],
+            },
+            colorId: '10'
+        }
+    } else {
+        // All-day event
+        const today = new Date().toISOString().split('T')[0]
+
+        return {
+            summary: `🎯 ${habit.title}`,
+            description: `Track your habit: ${habit.title} in the Habit Tracker App! (All-day habit)`,
+            start: {
+                date: today
+            },
+            end: {
+                date: today
+            },
+            recurrence: recurrence.length > 0 ? recurrence : undefined,
+            reminders: {
+                useDefault: false,
+                overrides: [
+                    { method: 'popup', minutes: 540 }, // 9am reminder
+                ],
+            },
+            colorId: '10'
+        }
+    }
+}

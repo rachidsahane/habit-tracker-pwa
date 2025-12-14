@@ -58,6 +58,9 @@ export async function getPublicFeed(limitCount = 50) {
                 const userSnap = await getDoc(userRef)
                 const user = userSnap.exists() ? userSnap.data() : {}
 
+                const type = completion.type || 'completion'
+                const streak = type === 'streak_lost' ? (completion.streakLength || 0) : (habit.currentStreak || 0)
+
                 feedItems.push({
                     id: completion.id,
                     habitId: completion.habitId,
@@ -65,13 +68,13 @@ export async function getPublicFeed(limitCount = 50) {
                     userId: completion.userId,
                     username: user.displayName || 'Anonymous',
                     photoURL: user.photoURL || null,
-                    streak: habit.currentStreak || 0,
+                    streak: streak,
                     timestamp: completion.timestamp,
                     date: completion.date,
-                    type: 'completion',
+                    type: type,
                 })
 
-                processedHabitIds.add(`${completion.habitId}_${completion.date}`)
+                processedHabitIds.add(`${completion.habitId}_${completion.date}_${type}`)
             } catch (error) {
                 console.error('Error processing completion:', error)
                 continue

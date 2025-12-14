@@ -26,12 +26,32 @@ export async function addCompletion(habitId, userId, date, value = true) {
             userId,
             date, // Format: 'YYYY-MM-DD'
             value,
+            type: 'completion', // Explicitly mark as completion
             timestamp: serverTimestamp(),
         })
         return { id: docRef.id, habitId, userId, date, value }
     } catch (error) {
         console.error('Error adding completion:', error)
         throw error
+    }
+}
+
+/**
+ * Record a lost streak event
+ */
+export async function addStreakLossEvent(habitId, userId, streakLength) {
+    try {
+        const completionsRef = collection(db, COMPLETIONS_COLLECTION)
+        await addDoc(completionsRef, {
+            habitId,
+            userId,
+            date: formatDate(new Date()),
+            streakLength,
+            type: 'streak_lost',
+            timestamp: serverTimestamp(),
+        })
+    } catch (error) {
+        console.error('Error adding streak loss event:', error)
     }
 }
 

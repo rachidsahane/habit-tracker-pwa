@@ -2,13 +2,13 @@ import { useState } from 'react'
 import Button from '../common/Button'
 
 const DAYS = [
-    { key: 0, label: 'S', name: 'Sunday' },
     { key: 1, label: 'M', name: 'Monday' },
     { key: 2, label: 'T', name: 'Tuesday' },
     { key: 3, label: 'W', name: 'Wednesday' },
     { key: 4, label: 'T', name: 'Thursday' },
     { key: 5, label: 'F', name: 'Friday' },
     { key: 6, label: 'S', name: 'Saturday' },
+    { key: 0, label: 'S', name: 'Sunday' },
 ]
 
 export default function DaySelector({ isOpen, onClose, selectedDays = [], onSave }) {

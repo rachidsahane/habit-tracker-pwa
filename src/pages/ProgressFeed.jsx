@@ -87,22 +87,38 @@ export default function ProgressFeed() {
                                         </p>
                                     </div>
 
-                                    <p className="text-base text-text-light-primary dark:text-text-dark-primary">
-                                        Completed: {item.habitTitle}
-                                    </p>
-
-                                    {/* Streak Badge */}
-                                    {item.streak > 0 && (
-                                        <div className="mt-2 flex items-center">
-                                            <div className="flex items-center gap-1 rounded-full bg-primary/20 px-3 py-1 text-sm font-medium">
-                                                <span className="material-symbols-outlined !text-[18px] !font-bold text-primary">
-                                                    local_fire_department
+                                    {item.type === 'streak_lost' ? (
+                                        <div className="flex flex-col gap-1">
+                                            <p className="text-base text-gray-700 dark:text-gray-300">
+                                                Lost a <span className="font-bold text-red-500">{item.streak} day streak</span> on {item.habitTitle}
+                                            </p>
+                                            <div className="flex items-center gap-1 text-red-500 text-sm">
+                                                <span className="material-symbols-outlined text-[18px]">
+                                                    heart_broken
                                                 </span>
-                                                <span className="font-bold text-text-light-primary dark:text-text-dark-primary">
-                                                    {item.streak}
-                                                </span>
+                                                <span className="font-medium">Ouch! Don't give up!</span>
                                             </div>
                                         </div>
+                                    ) : (
+                                        <>
+                                            <p className="text-base text-text-light-primary dark:text-text-dark-primary">
+                                                Completed: {item.habitTitle}
+                                            </p>
+
+                                            {/* Streak Badge */}
+                                            {item.streak > 0 && (
+                                                <div className="mt-2 flex items-center">
+                                                    <div className="flex items-center gap-1 rounded-full bg-primary/20 px-3 py-1 text-sm font-medium">
+                                                        <span className="material-symbols-outlined !text-[18px] !font-bold text-primary">
+                                                            local_fire_department
+                                                        </span>
+                                                        <span className="font-bold text-text-light-primary dark:text-text-dark-primary">
+                                                            {item.streak}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>
                                     )}
                                 </div>
                             </div>

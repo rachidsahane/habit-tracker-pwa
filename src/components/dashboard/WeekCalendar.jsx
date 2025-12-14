@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export default function WeekCalendar({ selectedDate, onDateSelect, completionsByDate = {} }) {
     const today = new Date()
@@ -10,7 +10,9 @@ export default function WeekCalendar({ selectedDate, onDateSelect, completionsBy
         const days = []
         const startOfWeek = new Date(today)
         const dayOfWeek = today.getDay()
-        startOfWeek.setDate(today.getDate() - dayOfWeek) // Start from Sunday
+        // Start from Monday (1) instead of Sunday (0)
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+        startOfWeek.setDate(today.getDate() - daysFromMonday)
 
         for (let i = 0; i < 7; i++) {
             const date = new Date(startOfWeek)
@@ -64,28 +66,28 @@ export default function WeekCalendar({ selectedDate, onDateSelect, completionsBy
                         >
                             <p
                                 className={`text-sm font-medium ${selected
-                                        ? 'text-text-light-primary'
-                                        : 'text-text-light-secondary dark:text-text-dark-secondary'
+                                    ? 'text-text-light-primary'
+                                    : 'text-text-light-secondary dark:text-text-dark-secondary'
                                     }`}
                             >
-                                {DAY_NAMES[date.getDay()]}
+                                {DAY_NAMES[(date.getDay() + 6) % 7]}
                             </p>
                             <p
                                 className={`text-lg font-bold mt-1 ${selected
-                                        ? 'text-text-light-primary'
-                                        : 'text-text-light-primary dark:text-text-dark-primary'
+                                    ? 'text-text-light-primary'
+                                    : 'text-text-light-primary dark:text-text-dark-primary'
                                     }`}
                             >
                                 {date.getDate()}
                             </p>
                             <div
                                 className={`w-2 h-2 rounded-full mt-2 ${selected
-                                        ? 'bg-text-light-primary'
-                                        : hasActivity
-                                            ? 'bg-primary'
-                                            : isPast
-                                                ? 'bg-text-light-secondary/30 dark:bg-text-dark-secondary/30'
-                                                : 'bg-text-light-secondary dark:bg-text-dark-secondary/50'
+                                    ? 'bg-text-light-primary'
+                                    : hasActivity
+                                        ? 'bg-primary'
+                                        : isPast
+                                            ? 'bg-text-light-secondary/30 dark:bg-text-dark-secondary/30'
+                                            : 'bg-text-light-secondary dark:bg-text-dark-secondary/50'
                                     }`}
                             />
                         </button>

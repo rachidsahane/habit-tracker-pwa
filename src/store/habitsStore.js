@@ -4,6 +4,7 @@ import * as completionsService from '../services/completions'
 import { updateWeeklyStats } from '../services/leaderboard'
 import { calculateStreak } from '../utils/streakCalculator'
 import { getWeekRange, formatDate } from '../utils/dateUtils'
+import { autoSyncHabit, deleteCalendarEvent } from '../services/calendar'
 
 // Note: We don't persist habits locally anymore - Firebase is the source of truth
 // Local persistence was causing stale/demo data issues on reload
@@ -51,6 +52,13 @@ export const useHabitsStore = create((set, get) => ({
                         h.id === tempId ? serverHabit : h
                     )
                 }))
+                // Auto-sync to calendar if token available
+                autoSyncHabit(serverHabit, userId).then(synced => {
+                    if (!synced) {
+                        // Token expired, suggest re-sync
+                        set({ needsCalendarReauth: true })
+                    }
+                })
             })
             .catch((error) => {
                 console.error('Background create failed:', error)
@@ -68,6 +76,7 @@ export const useHabitsStore = create((set, get) => ({
 
     // Update a habit (in Firestore)
     updateHabit: async (habitId, updates) => {
+        const userId = get().habits.find(h => h.id === habitId)?.userId
         // Optimistic update
         set((state) => ({
             habits: state.habits.map((h) =>
@@ -77,6 +86,11 @@ export const useHabitsStore = create((set, get) => ({
 
         try {
             await habitsService.updateHabit(habitId, updates)
+            // Auto-sync to calendar if token available
+            const updatedHabit = get().habits.find(h => h.id === habitId)
+            if (updatedHabit && userId) {
+                autoSyncHabit(updatedHabit, userId)
+            }
         } catch (error) {
             console.error('Error in updateHabit:', error)
             set({ error: error.message })
@@ -86,12 +100,19 @@ export const useHabitsStore = create((set, get) => ({
 
     // Delete a habit (from Firestore)
     deleteHabit: async (habitId) => {
+        // Store the googleEventId before deleting the habit
+        const googleEventId = get().habits.find(h => h.id === habitId)?.googleEventId
+
         set((state) => ({
             habits: state.habits.filter((h) => h.id !== habitId),
         }))
 
         try {
             await habitsService.deleteHabit(habitId)
+            // Delete from calendar if it was synced
+            if (googleEventId) {
+                deleteCalendarEvent(googleEventId)
+            }
         } catch (error) {
             console.error('Error in deleteHabit:', error)
         }

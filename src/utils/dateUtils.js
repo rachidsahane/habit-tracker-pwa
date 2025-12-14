@@ -24,15 +24,16 @@ export function getWeekId(date) {
 }
 
 /**
- * Get array of 7 days for the current week (Sunday to Saturday)
+ * Get array of 7 days for the current week (Monday to Sunday)
  */
 export function getWeekDays(date = new Date()) {
     const days = []
     const current = new Date(date)
     const dayOfWeek = current.getDay()
 
-    // Go to start of week (Sunday)
-    current.setDate(current.getDate() - dayOfWeek)
+    // Go to start of week (Monday)
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+    current.setDate(current.getDate() - daysFromMonday)
     current.setHours(0, 0, 0, 0)
 
     for (let i = 0; i < 7; i++) {
@@ -82,15 +83,18 @@ export function getRelativeTime(date) {
 }
 
 /**
- * Get start and end of week for a given date
+ * Get start and end of week for a given date (Monday to Sunday)
  */
 export function getWeekRange(date = new Date()) {
     const start = new Date(date)
-    start.setDate(start.getDate() - start.getDay()) // Sunday
+    const dayOfWeek = start.getDay()
+    // Go to Monday
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+    start.setDate(start.getDate() - daysFromMonday)
     start.setHours(0, 0, 0, 0)
 
     const end = new Date(start)
-    end.setDate(end.getDate() + 6) // Saturday
+    end.setDate(end.getDate() + 6) // Sunday
     end.setHours(23, 59, 59, 999)
 
     return { start, end }
